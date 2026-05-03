@@ -90,9 +90,13 @@ async function parseTransactionText(promptText) {
     throw new Error('Groq AI returned an empty response.');
   }
 
-  let parsed;
+ let parsed;
   try {
-    parsed = JSON.parse(rawContent);
+    // 1. Groq'un eklediği markdown etiketlerini (```json ve ```) temizle
+    const cleanedContent = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+    
+    // 2. Temizlenmiş metni parse et
+    parsed = JSON.parse(cleanedContent);
   } catch (error) {
     throw new Error(`Failed to parse Groq AI response as JSON: ${error.message}`);
   }

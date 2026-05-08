@@ -6,6 +6,7 @@ const mongoose = require('mongoose');
 dotenv.config();
 
 const transactionRoutes = require('./src/routes/transaction.routes');
+const analyticsRoutes = require('./src/routes/analytics.routes');
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -14,6 +15,7 @@ const mongoUri = process.env.MONGODB_URI;
 app.use(cors());
 app.use(express.json());
 app.use('/api/transactions', transactionRoutes);
+app.use('/api/analytics', analyticsRoutes);
 
 if (!mongoUri) {
   console.error('✗ MONGODB_URI is not defined in environment variables.');

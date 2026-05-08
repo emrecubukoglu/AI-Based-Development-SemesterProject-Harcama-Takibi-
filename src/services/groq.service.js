@@ -1,80 +1,78 @@
 const { Groq } = require('groq-sdk');
-
 const groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
-const TRANSACTION_SYSTEM_PROMPT = `You are a strict parser for financial transaction text. Return only valid JSON that matches the Transaction schema exactly. Do not add markdown, explanation, analysis, or any text outside the JSON object. 
+const getSystemPrompt = () => `You are a financial AI assistant. Today's real date is: ${new Date().toISOString()}.
+Analyze the conversation history to extract financial transactions (income, expense) or budget limits.
 
-Required fields:
-- user_id: string
-- type: string, must be either "income", "expense", or "budget"
-- amount: number, cannot be negative
-- category: string
-- description: string
-- date: string in ISO 8601 format
-- is_recurring: boolean
-- recurring_info: object when is_recurring is true, otherwise null or omitted
+OUTPUT FORMAT: You MUST return ONLY a JSON object matching this schema:
+{
+  "status": "complete" | "ask" | "cancel",
+  "message": "Your conversational reply to the user in Turkish.",
+  "transaction": {
+     "type": "income" | "expense" | "budget",
+     "amount": number,
+     "category": "String (Single Root Word)",
+     "description": "String",
+     "date": "ISO 8601 Date String",
+     "is_recurring": boolean,
+     "recurring_info": {
+        "frequency_days": number,
+        "last_processed_date": "ISO 8601 Date String"
+     }
+  } 
+} // NOTE: Only include the 'transaction' object if status is "complete".
 
-IMPORTANT INSTRUCTIONS:
-1. You must return the 'category' and 'description' values STRICTLY in Turkish.
-2. IF the user is setting a spending limit, budget limit, or goal for a category (e.g. "Yemek için 5000 TL limit belirle"), you MUST set type to "budget".
-3. IF it is a normal spending/expense, set type to "expense".
-4. IF it is earning/income, set type to "income".
+RULES:
+1. MISSING AMOUNT (CRITICAL): If the user DOES NOT explicitly state a numeric amount (e.g., "Kira ödüyorum", "Maaşım yattı"), YOU MUST set status to "ask" and ask them the amount in the "message" field. NEVER guess the amount. NEVER set the amount to 0.
+2. IRRELEVANT REPLY: If you previously asked for an amount, and the user replies with something irrelevant, set status to "cancel" and say "Harcama veya gelir tutarını belirtmediğiniz için ekleme yapamadım."
+3. COMPLETE: If all info is present, set status to "complete" and fill the "transaction" object.
+4. CATEGORY: NEVER use long names. Use single root words (e.g., "Market", "Yemek", "Maaş", "Kira").
+5. DATE: Always use today's real date unless the user explicitly specifies a past date.
+6. RECURRING: If the transaction is naturally recurring like "kira" (rent), "maaş" (salary), "fatura" (bill), or explicitly states "her ay" (every month), set "is_recurring" to true. For monthly, "frequency_days" is 30.
 
-If is_recurring is true, recurring_info must include:
-- frequency_days: integer >= 1
-- last_processed_date: string in ISO 8601 format
-
-Use the same schema names as Database_spec.md and follow transaction.model.js validations exactly. Return only one top-level JSON object with no comments, no markdown, no explanations.`;
+Return ONLY valid JSON. No markdown, no explanations.`;
 
 function normalizeAssistantContent(content) {
-  if (typeof content === 'string') {
-    return content;
-  }
-
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => (typeof part === 'string' ? part : part?.text ?? ''))
-      .join('');
-  }
-
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map((part) => (typeof part === 'string' ? part : part?.text ?? '')).join('');
   return '';
 }
 
 function validateTransactionPayload(payload) {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
-    throw new Error('Parsed transaction must be a JSON object.');
+    throw new Error('Parsed response must be a JSON object.');
   }
 
-  const { type, amount, is_recurring, recurring_info } = payload;
-  
-
-  if (type !== 'income' && type !== 'expense' && type !== 'budget') {
-    throw new Error('Parsed transaction type must be either "income", "expense", or "budget".');
+  if (!['complete', 'ask', 'cancel'].includes(payload.status)) {
+    throw new Error('Invalid status returned from AI.');
   }
 
-  if (typeof amount !== 'number' || Number.isNaN(amount) || amount < 0) {
-    throw new Error('Parsed transaction amount must be a non-negative number.');
-  }
-
-  if (is_recurring === true) {
-    if (typeof recurring_info !== 'object' || recurring_info === null) {
-      throw new Error('recurring_info must be provided when is_recurring is true.');
+  // YENİ: ARKA UÇ MÜDAHALESİ (Backend Override)
+  // Eğer AI "complete" deyip tutarı 0 gönderirse, bunu reddedip "ask" (soru) durumuna çeviriyoruz!
+  if (payload.status === 'complete') {
+    const tx = payload.transaction;
+    
+    if (!tx || typeof tx.amount !== 'number' || tx.amount <= 0) {
+      payload.status = 'ask';
+      payload.message = 'İşlemin tutarını belirtmediniz. Lütfen ne kadar olduğunu (örneğin: 15000 TL) yazar mısınız?';
+      delete payload.transaction;
+      return; // Sorunu düzelttiğimiz için doğrudan çıkış yapıyoruz
     }
-
-    const { frequency_days, last_processed_date } = recurring_info;
-    if (!Number.isInteger(frequency_days) || frequency_days < 1) {
-      throw new Error('recurring_info.frequency_days must be an integer greater than or equal to 1.');
-    }
-
-    if (typeof last_processed_date !== 'string' || !last_processed_date.trim()) {
-      throw new Error('recurring_info.last_processed_date must be a valid ISO date string.');
+    
+    // Düzenli işlem eksik verisi varsa normal işleme çevir
+    if (tx.is_recurring === true) {
+      const info = tx.recurring_info;
+      if (!info || typeof info !== 'object' || !Number.isInteger(info.frequency_days) || info.frequency_days < 1) {
+        tx.is_recurring = false;
+        tx.recurring_info = undefined;
+      }
     }
   }
 }
 
-async function parseTransactionText(promptText) {
-  if (typeof promptText !== 'string' || !promptText.trim()) {
-    throw new Error('promptText must be a non-empty string.');
+async function parseTransactionText(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    throw new Error('messages must be a non-empty array.');
   }
 
   const response = await groqClient.chat.completions.create({
@@ -82,24 +80,19 @@ async function parseTransactionText(promptText) {
     temperature: 0.1,
     stream: false,
     messages: [
-      { role: 'system', content: TRANSACTION_SYSTEM_PROMPT },
-      { role: 'user', content: promptText },
+      { role: 'system', content: getSystemPrompt() },
+      ...messages
     ],
   });
 
   const choice = response.choices?.[0];
   const rawContent = normalizeAssistantContent(choice?.message?.content);
 
-  if (!rawContent) {
-    throw new Error('Groq AI returned an empty response.');
-  }
+  if (!rawContent) throw new Error('Groq AI returned an empty response.');
 
- let parsed;
+  let parsed;
   try {
-    // 1. Groq'un eklediği markdown etiketlerini (```json ve ```) temizle
     const cleanedContent = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
-    
-    // 2. Temizlenmiş metni parse et
     parsed = JSON.parse(cleanedContent);
   } catch (error) {
     throw new Error(`Failed to parse Groq AI response as JSON: ${error.message}`);
@@ -109,6 +102,4 @@ async function parseTransactionText(promptText) {
   return parsed;
 }
 
-module.exports = {
-  parseTransactionText,
-};
+module.exports = { parseTransactionText };

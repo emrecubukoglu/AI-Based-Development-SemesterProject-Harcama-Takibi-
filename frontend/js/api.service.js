@@ -1,10 +1,11 @@
 const API_BASE_URL = 'http://localhost:3000';
 
-async function postTransactionText(text) {
+async function postTransactionText(messages) {
   const response = await fetch(`${API_BASE_URL}/api/transactions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text })
+    // "text" yerine "messages" dizisini gönderiyoruz
+    body: JSON.stringify({ messages }) 
   });
   if (!response.ok) {
     throw new Error(`HTTP error! status: ${response.status}`);
@@ -64,5 +65,15 @@ async function setBudget(category, limitAmount) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ category, limitAmount })
   });
+  return await response.json();
+}
+
+async function deleteBudget(id) {
+  const response = await fetch(`${API_BASE_URL}/api/analytics/budget/${id}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
   return await response.json();
 }

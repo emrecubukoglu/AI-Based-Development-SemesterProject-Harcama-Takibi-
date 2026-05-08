@@ -2,48 +2,55 @@ const Transaction = require('../models/transaction.model');
 const Budget = require('../models/budget.model'); // YENİ: Bütçe modeli eklendi
 const { parseTransactionText } = require('../services/groq.service');
 
-// Mevcut AI Kayıt Fonksiyonumuz (Bütçe kontrolü eklendi)
+
+
+
 async function processRequest(req, res) {
   try {
-    const { text } = req.body;
-    if (!text || typeof text !== 'string' || !text.trim()) {
-      return res.status(400).json({ error: 'Text is required.' });
+    const { messages } = req.body; 
+    
+    if (!Array.isArray(messages)) {
+      return res.status(400).json({ error: 'Messages array is required.' });
     }
 
-    const parsedData = await parseTransactionText(text);
+    const parsedData = await parseTransactionText(messages);
 
-    // YENİ: EĞER YAPAY ZEKA BUNUN BİR BÜTÇE LİMİTİ OLDUĞUNU ANLARSA:
-    if (parsedData.type === 'budget') {
-      const budget = await Budget.findOneAndUpdate(
-        { category: parsedData.category },
-        { limitAmount: parsedData.amount },
-        { new: true, upsert: true } // Varsa güncelle, yoksa yeni oluştur
-      );
-      
-      // Frontend'e bunun bir bütçe işlemi olduğunu bildiren özel bir yanıt dön
-      return res.status(201).json({
-        isBudget: true,
-        category: parsedData.category,
-        amount: parsedData.amount,
-        type: 'budget'
+    // AI soru sormak veya işlemi iptal etmek istiyorsa veritabanına dokunmadan direkt dön
+    if (parsedData.status === 'ask' || parsedData.status === 'cancel') {
+      return res.status(200).json({ 
+        status: parsedData.status, 
+        message: parsedData.message 
       });
     }
 
-    // NORMAL HARCAMA VEYA GELİR İSE (Mevcut kod):
-    const transaction = new Transaction(parsedData);
+    const txData = parsedData.transaction;
+
+    // YENİ: Veritabanının çökmemesi için zorunlu olan user_id alanını manuel dolduruyoruz
+    txData.user_id = 'test_user_123'; 
+
+    if (txData.type === 'budget') {
+      const budget = await Budget.findOneAndUpdate(
+        { category: txData.category },
+        { limitAmount: txData.amount },
+        { new: true, upsert: true }
+      );
+      return res.status(201).json({ status: 'complete', message: parsedData.message, isBudget: true, data: budget });
+    }
+
+    const transaction = new Transaction(txData);
     const savedTransaction = await transaction.save();
 
-    res.status(201).json(savedTransaction);
+    res.status(201).json({ status: 'complete', message: parsedData.message, data: savedTransaction });
   } catch (error) {
     console.error('Error processing transaction:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 }
 
-// Tüm işlemleri tablo için getir
+
 async function getAllTransactions(req, res) {
   try {
-    // En yeniler en üstte olacak şekilde getir
+    
     const transactions = await Transaction.find().sort({ date: -1 });
     res.json(transactions);
   } catch (error) {
@@ -51,7 +58,7 @@ async function getAllTransactions(req, res) {
   }
 }
 
-// Tablodan gelen manuel düzenlemeleri kaydet
+
 async function updateTransaction(req, res) {
   try {
     const { id } = req.params;
@@ -62,7 +69,7 @@ async function updateTransaction(req, res) {
   }
 }
 
-// Veritabanından işlem sil
+
 async function deleteTransaction(req, res) {
   try {
     const { id } = req.params;

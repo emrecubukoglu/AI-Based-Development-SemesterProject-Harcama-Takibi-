@@ -62,7 +62,7 @@ function renderBudgetStatus(budgetStatus) {
   });
 }
 
-// Bütçe Silme İşlemi
+
 window.handleDeleteBudget = async function(id) {
   if (confirm('Bu bütçe limitini kalıcı olarak silmek istediğinize emin misiniz?')) {
     await deleteBudget(id);
@@ -70,7 +70,7 @@ window.handleDeleteBudget = async function(id) {
   }
 };
 
-// İşlem Silme Fonksiyonu
+
 window.handleDeleteTransaction = async function(id) {
   if (confirm('Bu işlemi kalıcı olarak silmek istediğinize emin misiniz?')) {
     await deleteTransaction(id);
@@ -111,22 +111,20 @@ async function loadTransactionsTable() {
     const transactions = await getTransactions();
     transactionsTbody.innerHTML = '';
     
-    // Düzenli işlemleri sadece üstteki liste görünümü için filtrele
+    
     const recurringTransactions = transactions.filter(t => t.is_recurring);
     renderRecurringTransactions(recurringTransactions);
 
-    // DÜZELTME: Tüm işlemleri (hem normal hem düzenli) tabloya basıyoruz
+    
     transactions.forEach(transaction => {
       const row = document.createElement('tr');
 
-      // Tarih Hücresi
       const dateCell = document.createElement('td');
       const rawDate = new Date(transaction.date);
       dateCell.textContent = rawDate.toLocaleDateString('tr-TR');
       dateCell.dataset.rawdate = rawDate.toISOString().split('T')[0];
       row.appendChild(dateCell);
 
-      // Tür
       const typeCell = document.createElement('td');
       const typeBadge = document.createElement('span');
       typeBadge.className = `badge ${transaction.type === 'income' ? 'bg-success' : 'bg-danger'}`;
@@ -134,24 +132,19 @@ async function loadTransactionsTable() {
       typeCell.appendChild(typeBadge);
       row.appendChild(typeCell);
 
-      // Kategori
       const categoryCell = document.createElement('td');
-      // Eğer düzenli işlemse isminin yanına bir simge ekleyelim ki tabloda belli olsun
       categoryCell.textContent = (transaction.is_recurring ? '🔁 ' : '') + transaction.category;
       row.appendChild(categoryCell);
 
-      // Tutar Hücresi
       const amountCell = document.createElement('td');
       amountCell.textContent = `${transaction.amount.toFixed(2)} TL`;
       amountCell.dataset.rawamount = transaction.amount;
       row.appendChild(amountCell);
 
-      // Açıklama
       const descriptionCell = document.createElement('td');
       descriptionCell.textContent = transaction.description;
       row.appendChild(descriptionCell);
 
-      // Butonlar
       const actionCell = document.createElement('td'); 
       const editBtn = document.createElement('button');
       editBtn.className = 'btn btn-sm btn-primary me-2';
@@ -222,7 +215,6 @@ function enableEdit(row, id) {
 
   const categoryInput = document.createElement('input');
   categoryInput.type = 'text';
-  // Simgeyi temizleyip sadece metni alıyoruz
   categoryInput.value = categoryCell.textContent.replace('🔁 ', '');
   categoryInput.className = 'form-control form-control-sm';
   categoryCell.innerHTML = '';
@@ -263,7 +255,138 @@ function enableEdit(row, id) {
   editCell.appendChild(saveBtn);
 }
 
+
+
+window.downloadReport = async function(type) {
+  try {
+      const transactions = await getTransactions();
+      let filtered = transactions;
+      const now = new Date();
+      
+      if (type === 'weekly') {
+          const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          filtered = transactions.filter(t => new Date(t.date) >= lastWeek);
+      } else if (type === 'monthly') {
+          const lastMonth = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          filtered = transactions.filter(t => new Date(t.date) >= lastMonth);
+      }
+
+      if (filtered.length === 0) {
+          alert('Bu dönem için raporlanacak işlem bulunamadı.');
+          return;
+      }
+
+     
+
+      const replaceTr = (str) => {
+          if (!str) return '';
+          return str.replace(/ı/g, 'i').replace(/İ/g, 'I').replace(/ğ/g, 'g').replace(/Ğ/g, 'G')
+                    .replace(/ü/g, 'u').replace(/Ü/g, 'U').replace(/ş/g, 's').replace(/Ş/g, 'S')
+                    .replace(/ö/g, 'o').replace(/Ö/g, 'O').replace(/ç/g, 'c').replace(/Ç/g, 'C');
+      };
+
+      
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+     
+      doc.setFontSize(18);
+      const title = type === 'weekly' ? 'Haftalik Harcama Raporu' : 'Aylik Harcama Raporu';
+      doc.text(title, 14, 22);
+      
+      
+      doc.setFontSize(11);
+      doc.setTextColor(100);
+      doc.text(`Olusturulma Tarihi: ${now.toLocaleDateString('tr-TR')}`, 14, 30);
+
+      
+      const tableColumn = ["Tarih", "Tur", "Kategori", "Tutar (TL)", "Aciklama", "Duzenli"];
+      const tableRows = [];
+
+      filtered.forEach(t => {
+          const tDate = new Date(t.date).toLocaleDateString('tr-TR');
+          const tType = t.type === 'income' ? 'Gelir' : 'Gider';
+          const tRec = t.is_recurring ? 'Evet' : 'Hayir';
+          
+          const rowData = [
+              tDate,
+              tType,
+              replaceTr(t.category),
+              t.amount.toFixed(2),
+              replaceTr(t.description),
+              tRec
+          ];
+          tableRows.push(rowData);
+      });
+
+      
+      doc.autoTable({
+          head: [tableColumn],
+          body: tableRows,
+          startY: 40,
+          theme: 'grid',
+          styles: { fontSize: 10, cellPadding: 4 },
+          headStyles: { fillColor: [41, 128, 185], textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [245, 245, 245] }
+      });
+
+      
+      const fileName = `Harcama_Raporu_${type === 'weekly' ? 'Haftalik' : 'Aylik'}.pdf`;
+      doc.save(fileName);
+
+  } catch (error) {
+      console.error(error);
+      alert('PDF rapor oluşturulurken hata oluştu.');
+  }
+};
+
+
 document.addEventListener('DOMContentLoaded', async () => {
+  
+  
   await loadSummaryCards();
   await loadTransactionsTable();
+
+  
+  const dateInput = document.getElementById('manual-date');
+  if(dateInput) dateInput.valueAsDate = new Date();
+
+  
+  const manualForm = document.getElementById('manualAddForm');
+  if(manualForm) {
+    manualForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const type = document.getElementById('manual-type').value;
+      const category = document.getElementById('manual-category').value;
+      const amount = document.getElementById('manual-amount').value;
+      const date = document.getElementById('manual-date').value;
+      const description = document.getElementById('manual-description').value;
+      const is_recurring = document.getElementById('manual-recurring').checked;
+
+      let recurring_info = undefined;
+      if (is_recurring) {
+         recurring_info = { frequency_days: 30, last_processed_date: date };
+      }
+
+      try {
+        await addManualTransaction({ type, category, amount, date, description, is_recurring, recurring_info });
+        
+        // Modalı Kapat
+        const modalEl = document.getElementById('manualAddModal');
+        const modal = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl);
+        modal.hide();
+        
+        
+        e.target.reset();
+        document.getElementById('manual-date').valueAsDate = new Date();
+        
+        
+        await loadTransactionsTable();
+        await loadSummaryCards();
+      } catch (error) {
+        alert('İşlem eklenirken bir hata oluştu!');
+      }
+    });
+  }
 });

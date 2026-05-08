@@ -47,3 +47,22 @@ async function checkBudget() {
   }
   return await response.json();
 }
+
+async function deleteTransaction(id) {
+  const response = await fetch(`${API_BASE_URL}/api/transactions/${id}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return await response.json();
+}
+
+async function setBudget(category, limitAmount) {
+  const response = await fetch(`${API_BASE_URL}/api/analytics/budget`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category, limitAmount })
+  });
+  return await response.json();
+}

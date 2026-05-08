@@ -1,7 +1,8 @@
 const Transaction = require('../models/transaction.model');
+const Budget = require('../models/budget.model'); // YENİ: Bütçe modeli eklendi
 const { parseTransactionText } = require('../services/groq.service');
 
-// Mevcut AI Kayıt Fonksiyonumuz
+// Mevcut AI Kayıt Fonksiyonumuz (Bütçe kontrolü eklendi)
 async function processRequest(req, res) {
   try {
     const { text } = req.body;
@@ -10,6 +11,25 @@ async function processRequest(req, res) {
     }
 
     const parsedData = await parseTransactionText(text);
+
+    // YENİ: EĞER YAPAY ZEKA BUNUN BİR BÜTÇE LİMİTİ OLDUĞUNU ANLARSA:
+    if (parsedData.type === 'budget') {
+      const budget = await Budget.findOneAndUpdate(
+        { category: parsedData.category },
+        { limitAmount: parsedData.amount },
+        { new: true, upsert: true } // Varsa güncelle, yoksa yeni oluştur
+      );
+      
+      // Frontend'e bunun bir bütçe işlemi olduğunu bildiren özel bir yanıt dön
+      return res.status(201).json({
+        isBudget: true,
+        category: parsedData.category,
+        amount: parsedData.amount,
+        type: 'budget'
+      });
+    }
+
+    // NORMAL HARCAMA VEYA GELİR İSE (Mevcut kod):
     const transaction = new Transaction(parsedData);
     const savedTransaction = await transaction.save();
 
@@ -20,7 +40,7 @@ async function processRequest(req, res) {
   }
 }
 
-// YENİ: Tüm işlemleri tablo için getir
+// Tüm işlemleri tablo için getir
 async function getAllTransactions(req, res) {
   try {
     // En yeniler en üstte olacak şekilde getir
@@ -31,7 +51,7 @@ async function getAllTransactions(req, res) {
   }
 }
 
-// YENİ: Tablodan gelen manuel düzenlemeleri kaydet
+// Tablodan gelen manuel düzenlemeleri kaydet
 async function updateTransaction(req, res) {
   try {
     const { id } = req.params;
@@ -42,4 +62,20 @@ async function updateTransaction(req, res) {
   }
 }
 
-module.exports = { processRequest, getAllTransactions, updateTransaction };
+// Veritabanından işlem sil
+async function deleteTransaction(req, res) {
+  try {
+    const { id } = req.params;
+    const deleted = await Transaction.findByIdAndDelete(id);
+    
+    if (!deleted) {
+      return res.status(404).json({ error: 'Silinecek işlem bulunamadı' });
+    }
+    
+    res.json({ message: 'İşlem başarıyla silindi' });
+  } catch (error) {
+    res.status(500).json({ error: 'Silme işlemi sırasında hata oluştu' });
+  }
+}
+
+module.exports = { processRequest, getAllTransactions, updateTransaction, deleteTransaction };

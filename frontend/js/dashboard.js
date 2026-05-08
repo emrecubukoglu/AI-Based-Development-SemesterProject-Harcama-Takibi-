@@ -22,12 +22,50 @@ async function loadSummaryCards() {
       netBalanceEl.style.color = '';
     }
     loadCharts(summary);
+  if (summary.budgetStatus) {
+        renderBudgetStatus(summary.budgetStatus);
+    }
+    
   } catch (error) {
     console.error('Error loading summary cards:', error);
     alert('Özet kartları yüklenirken hata oluştu.');
   }
 }
+ function renderBudgetStatus(budgetStatus) {
+  const listContainer = document.getElementById('budget-status-list');
+  listContainer.innerHTML = '';
 
+  // Eğer henüz hiç limit eklenmemişse bilgi verelim
+  if (!budgetStatus || budgetStatus.length === 0) {
+      listContainer.innerHTML = '<div class="text-muted">Henüz tanımlanmış bir kategori limiti bulunmuyor.</div>';
+      return;
+  }
+
+  budgetStatus.forEach(item => {
+    const isDanger = item.status === 'danger';
+    const isWarning = item.status === 'warning';
+    
+    // Dinamik renk sınıfları
+    const bgColor = isDanger ? 'bg-danger text-white' : (isWarning ? 'bg-warning' : '');
+    const progressColor = isDanger ? 'bg-white' : (isWarning ? 'bg-dark' : 'bg-primary');
+
+    const itemHtml = `
+      <div class="list-group-item ${bgColor} mb-2 border rounded shadow-sm">
+        <div class="d-flex justify-content-between align-items-center">
+          <strong>${item.category}</strong>
+          <span>${item.spent} TL / ${item.limit} TL (%${item.percentage})</span>
+        </div>
+        <div class="progress mt-2" style="height: 10px;">
+          <div class="progress-bar ${progressColor}" role="progressbar" 
+               style="width: ${Math.min(item.percentage, 100)}%"></div>
+        </div>
+        ${isWarning && !isDanger ? '<small class="text-dark fw-bold mt-1 d-block">⚠️ Limitinizin %80\'ine ulaştınız!</small>' : ''}
+        ${isDanger ? '<small class="text-white fw-bold mt-1 d-block">🚨 Limit aşıldı!</small>' : ''}
+      </div>
+    `;
+    listContainer.innerHTML += itemHtml;
+  });
+}
 function loadCharts(summaryData) {
   // Destroy existing charts
   if (categoryChart) {
@@ -104,14 +142,36 @@ async function loadTransactionsTable() {
       descriptionCell.textContent = transaction.description;
       row.appendChild(descriptionCell);
 
-      const editCell = document.createElement('td');
+     const actionCell = document.createElement('td'); // Adını actionCell yaptık
+      
+      // Düzenle Butonu
       const editBtn = document.createElement('button');
-      editBtn.className = 'btn btn-sm btn-primary';
+      editBtn.className = 'btn btn-sm btn-primary me-2'; // me-2 ile araya boşluk verdik
       editBtn.textContent = 'Düzenle';
       editBtn.onclick = () => enableEdit(row, transaction._id);
-      editCell.appendChild(editBtn);
-      row.appendChild(editCell);
+      actionCell.appendChild(editBtn);
 
+      // YENİ: Sil Butonu
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'btn btn-sm btn-danger';
+      deleteBtn.textContent = 'Sil';
+      deleteBtn.onclick = async () => {
+        // Kullanıcıya yanlışlıkla silmeye karşı onay soralım
+        if (confirm('Bu işlemi kalıcı olarak silmek istediğinize emin misiniz?')) {
+          try {
+            await deleteTransaction(transaction._id);
+            // Veri silindikten sonra hem tabloyu hem de grafikleri anında tazele
+            await loadTransactionsTable();
+            await loadSummaryCards();
+          } catch (error) {
+            console.error('Silme hatası:', error);
+            alert('Silinirken bir hata oluştu.');
+          }
+        }
+      };
+      actionCell.appendChild(deleteBtn);
+      
+      row.appendChild(actionCell);
       transactionsTbody.appendChild(row);
     });
   } catch (error) {

@@ -9,7 +9,6 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <!-- Navbar -->
   <nav class="navbar navbar-expand-lg navbar-light bg-light">
     <div class="container-fluid">
       <a class="navbar-brand" href="index.html">← Sohbete Dön</a>
@@ -20,7 +19,6 @@
   </nav>
 
   <div class="container-fluid mt-4">
-    <!-- Summary Cards -->
     <div class="row mb-4">
       <div class="col-md-4">
         <div class="card text-white bg-success">
@@ -48,7 +46,6 @@
       </div>
     </div>
 
-    <!-- Charts -->
     <div class="row mb-4">
       <div class="col-md-6">
         <h5>Kategori Dağılımı</h5>
@@ -60,7 +57,14 @@
       </div>
     </div>
 
-    <!-- Data Table -->
+    <div class="row mb-4">
+      <div class="col-12">
+        <h5>📊 Bütçe Limitleri</h5>
+        <div id="budget-status-list" class="list-group">
+          </div>
+      </div>
+    </div>
+
     <div class="row">
       <div class="col-12">
         <h5>İşlemler</h5>
@@ -76,13 +80,11 @@
             </tr>
           </thead>
           <tbody id="transactions-tbody">
-            <!-- Rows will be added by dashboard.js -->
-          </tbody>
+            </tbody>
         </table>
       </div>
     </div>
 
-    <!-- Budget Alert -->
     <div id="budget-alert" class="alert alert-danger d-none">
       Bütçe aşımı uyarısı!
     </div>

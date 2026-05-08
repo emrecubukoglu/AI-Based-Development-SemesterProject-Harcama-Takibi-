@@ -4,10 +4,9 @@ const groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 const TRANSACTION_SYSTEM_PROMPT = `You are a strict parser for financial transaction text. Return only valid JSON that matches the Transaction schema exactly. Do not add markdown, explanation, analysis, or any text outside the JSON object. 
 
-
 Required fields:
 - user_id: string
-- type: string, must be either \"income\" or \"expense\"
+- type: string, must be either "income", "expense", or "budget"
 - amount: number, cannot be negative
 - category: string
 - description: string
@@ -15,7 +14,11 @@ Required fields:
 - is_recurring: boolean
 - recurring_info: object when is_recurring is true, otherwise null or omitted
 
-IMPORTANT: You must return the 'category' and 'description' values STRICTLY in Turkish.
+IMPORTANT INSTRUCTIONS:
+1. You must return the 'category' and 'description' values STRICTLY in Turkish.
+2. IF the user is setting a spending limit, budget limit, or goal for a category (e.g. "Yemek için 5000 TL limit belirle"), you MUST set type to "budget".
+3. IF it is a normal spending/expense, set type to "expense".
+4. IF it is earning/income, set type to "income".
 
 If is_recurring is true, recurring_info must include:
 - frequency_days: integer >= 1
@@ -43,9 +46,10 @@ function validateTransactionPayload(payload) {
   }
 
   const { type, amount, is_recurring, recurring_info } = payload;
+  
 
-  if (type !== 'income' && type !== 'expense') {
-    throw new Error('Parsed transaction type must be either "income" or "expense".');
+  if (type !== 'income' && type !== 'expense' && type !== 'budget') {
+    throw new Error('Parsed transaction type must be either "income", "expense", or "budget".');
   }
 
   if (typeof amount !== 'number' || Number.isNaN(amount) || amount < 0) {

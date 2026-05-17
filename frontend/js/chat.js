@@ -2,20 +2,19 @@ const chatMessages = document.getElementById('chat-messages');
 const userInput = document.getElementById('user-input');
 const sendBtn = document.getElementById('send-btn');
 
-
 let conversationHistory = []; 
 
+// Yenilenen Şık Mesaj Üretim Altyapısı
 function appendMessage(role, content) {
-  const messageDiv = document.createElement('div');
-  messageDiv.className = `d-flex mb-2 ${role === 'user' ? 'justify-content-end' : 'justify-content-start'}`;
+  const wrapperDiv = document.createElement('div');
+  wrapperDiv.className = `message-wrapper ${role}`;
 
   const bubbleDiv = document.createElement('div');
-  bubbleDiv.className = `p-2 rounded ${role === 'user' ? 'bg-primary text-white' : role === 'error' ? 'bg-danger text-white' : 'bg-light text-dark'}`;
-  bubbleDiv.style.maxWidth = '70%';
+  bubbleDiv.className = 'bubble';
   bubbleDiv.textContent = content;
 
-  messageDiv.appendChild(bubbleDiv);
-  chatMessages.appendChild(messageDiv);
+  wrapperDiv.appendChild(bubbleDiv);
+  chatMessages.appendChild(wrapperDiv);
   chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
@@ -24,27 +23,20 @@ async function handleSend() {
   if (!text) return;
 
   appendMessage('user', text);
-  
-  
   conversationHistory.push({ role: 'user', content: text });
 
   userInput.value = '';
   sendBtn.disabled = true;
-  sendBtn.textContent = 'Bekleniyor...';
+  sendBtn.textContent = '...';
 
   try {
-    
     const response = await postTransactionText(conversationHistory);
     
-  
     appendMessage('ai', response.message);
-
-    
     conversationHistory.push({ role: 'assistant', content: response.message });
 
   } catch (error) {
     appendMessage('error', `❌ Bir hata oluştu: ${error.message}`);
-    
     conversationHistory.pop(); 
   } finally {
     sendBtn.disabled = false;
@@ -53,7 +45,7 @@ async function handleSend() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  appendMessage('ai', "Merhaba! Harcamalarını veya gelirlerini doğal dille yazabilirsin. Örnek: 'Bugün marketten 450 TL harcadım.'");
+  appendMessage('ai', "Merhaba! Harcamalarınızı veya gelirlerinizi doğal dille buraya yazabilirsiniz. Örnek: 'Marketten 450 TL harcadım.'");
 });
 
 sendBtn.addEventListener('click', handleSend);

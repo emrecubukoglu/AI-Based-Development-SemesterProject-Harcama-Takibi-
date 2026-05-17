@@ -4,6 +4,20 @@ const groqClient = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const getSystemPrompt = () => `You are a financial AI assistant. Today's real date is: ${new Date().toISOString()}.
 Analyze the conversation history to extract financial transactions (income, expense) or budget limits.
 
+STRICT CATEGORY LIST: You MUST classify the transaction into EXACTLY ONE of these 10 categories:
+1. "Market" (Groceries, supermarket shopping)
+2. "Yemek" (Restaurants, fast food, delivery, cafes)
+3. "Kira" (Rent payments)
+4. "Fatura" (Electricity, water, gas, internet, phone bills)
+5. "Ulaşım" (Fuel, public transport, taxi, car maintenance)
+6. "Eğitim" (Courses, books, school/university fees)
+7. "Sağlık" (Pharmacy, doctor, hospital, health insurance)
+8. "Eğlence" (Movies, games, concerts, hobbies, subscriptions like Netflix)
+9. "Giyim" (Clothes, shoes, accessories)
+10. "Maaş" (Salary, main income source)
+
+CRITICAL CATEGORY RULE: If a transaction does not fit perfectly into any of the 10 categories above, you MUST classify it as "Diğer". Do not create new categories under any circumstances.
+
 OUTPUT FORMAT: You MUST return ONLY a JSON object matching this schema:
 {
   "status": "complete" | "ask" | "cancel",
@@ -11,7 +25,7 @@ OUTPUT FORMAT: You MUST return ONLY a JSON object matching this schema:
   "transaction": {
      "type": "income" | "expense" | "budget",
      "amount": number,
-     "category": "String (Single Root Word)",
+     "category": "Market" | "Yemek" | "Kira" | "Fatura" | "Ulaşım" | "Eğitim" | "Sağlık" | "Eğlence" | "Giyim" | "Maaş" | "Diğer",
      "description": "String",
      "date": "ISO 8601 Date String",
      "is_recurring": boolean,
@@ -20,17 +34,7 @@ OUTPUT FORMAT: You MUST return ONLY a JSON object matching this schema:
         "last_processed_date": "ISO 8601 Date String"
      }
   } 
-} // NOTE: Only include the 'transaction' object if status is "complete".
-
-RULES:
-1. MISSING AMOUNT (CRITICAL): If the user DOES NOT explicitly state a numeric amount (e.g., "Kira ödüyorum", "Maaşım yattı"), YOU MUST set status to "ask" and ask them the amount in the "message" field. NEVER guess the amount. NEVER set the amount to 0.
-2. IRRELEVANT REPLY: If you previously asked for an amount, and the user replies with something irrelevant, set status to "cancel" and say "Harcama veya gelir tutarını belirtmediğiniz için ekleme yapamadım."
-3. COMPLETE: If all info is present, set status to "complete" and fill the "transaction" object.
-4. CATEGORY: NEVER use long names. Use single root words (e.g., "Market", "Yemek", "Maaş", "Kira").
-5. DATE: Always use today's real date unless the user explicitly specifies a past date.
-6. RECURRING: If the transaction is naturally recurring like "kira" (rent), "maaş" (salary), "fatura" (bill), or explicitly states "her ay" (every month), set "is_recurring" to true. For monthly, "frequency_days" is 30.
-
-Return ONLY valid JSON. No markdown, no explanations.`;
+}`;
 
 function normalizeAssistantContent(content) {
   if (typeof content === 'string') return content;
@@ -42,24 +46,21 @@ function validateTransactionPayload(payload) {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
     throw new Error('Parsed response must be a JSON object.');
   }
-
   if (!['complete', 'ask', 'cancel'].includes(payload.status)) {
     throw new Error('Invalid status returned from AI.');
   }
-
-  // YENİ: ARKA UÇ MÜDAHALESİ (Backend Override)
-  // Eğer AI "complete" deyip tutarı 0 gönderirse, bunu reddedip "ask" (soru) durumuna çeviriyoruz!
   if (payload.status === 'complete') {
     const tx = payload.transaction;
-    
     if (!tx || typeof tx.amount !== 'number' || tx.amount <= 0) {
       payload.status = 'ask';
       payload.message = 'İşlemin tutarını belirtmediniz. Lütfen ne kadar olduğunu (örneğin: 15000 TL) yazar mısınız?';
       delete payload.transaction;
-      return; // Sorunu düzelttiğimiz için doğrudan çıkış yapıyoruz
+      return;
     }
-    
-    // Düzenli işlem eksik verisi varsa normal işleme çevir
+    const allowedCategories = ["Market", "Yemek", "Kira", "Fatura", "Ulaşım", "Eğitim", "Sağlık", "Eğlence", "Giyim", "Maaş", "Diğer"];
+    if (!allowedCategories.includes(tx.category)) {
+      tx.category = "Diğer";
+    }
     if (tx.is_recurring === true) {
       const info = tx.recurring_info;
       if (!info || typeof info !== 'object' || !Number.isInteger(info.frequency_days) || info.frequency_days < 1) {
